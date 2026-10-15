@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pet-LaoQin · 网页桌宠</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #f5f5f7;
+    transition: background 0.4s;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+
+  body.dark {
+    background: #0d0d0f;
+  }
+
+  /* 地面网格，让角色有“站在桌面上”的感觉 */
+  .ground {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 120px;
+    background: linear-gradient(to top, rgba(0,0,0,0.06), transparent);
+    pointer-events: none;
+    transition: background 0.4s;
+  }
+
+  body.dark .ground {
+    background: linear-gradient(to top, rgba(255,255,255,0.05), transparent);
+  }
+
+  /* 桌宠容器 */
+  #pet {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+    z-index: 10;
+  }
+
+  #pet:active {
+    cursor: grabbing;
+  }
+
+  /* 呼吸动画 */
+  #pet.breathing {
+    animation: breath 3s ease-in-out infinite;
+  }
+
+  @keyframes breath {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); }
+    50% { transform: translate(-50%, -50%) scale(1.03); }
+  }
+
+  /* 角色图片 */
+  #pet-img {
+    display: block;
+    width: 200px;
+    height: auto;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    filter: drop-shadow(0 10px 20px rgba(0,0,0,0.15));
+  }
+
+  body.dark #pet-img {
+    filter: drop-shadow(0 10px 20px rgba(0,0,0,0.5));
+  }
+
+  #pet-img.fading {
+    opacity: 0;
+  }
+
+  /* 阴影 */
+  #pet-shadow {
+    position: absolute;
+    left: 50%;
+    bottom: -8px;
+    transform: translateX(-50%);
+    width: 60%;
+    height: 16px;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0.25), transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+    transition: opacity 0.25s, background 0.4s;
+  }
+
+  body.dark #pet-shadow {
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0.6), transparent 70%);
+  }
+
+  /* 拖拽时阴影变淡（角色被拎起来） */
+  #pet.dragging #pet-shadow {
+    opacity: 0.3;
+  }
+
+  /* 顶部控制栏 */
+  .controls {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    gap: 8px;
+    z-index: 100;
+  }
+
+  .btn {
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: #1d1d1f;
+    border: 1px solid rgba(0,0,0,0.08);
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .btn:hover {
+    background: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+
+  body.dark .btn {
+    background: rgba(40,40,42,0.85);
+    color: #f5f5f7;
+    border-color: rgba(255,255,255,0.1);
+  }
+
+  body.dark .btn:hover {
+    background: rgba(60,60,62,0.95);
+  }
+
+  /* 提示文字 */
+  .hint {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(0,0,0,0.35);
+    font-size: 13px;
+    text-align: center;
+    pointer-events: none;
+    transition: color 0.4s, opacity 0.4s;
+    z-index: 5;
+  }
+
+  body.dark .hint {
+    color: rgba(255,255,255,0.3);
+  }
+
+  .hint.hidden {
+    opacity: 0;
+  }
+
+  /* 右键菜单 */
+  #context-menu {
+    position: fixed;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+    display: none;
+    z-index: 1000;
+    min-width: 140px;
+  }
+
+  body.dark #context-menu {
+    background: rgba(40,40,42,0.95);
+    border-color: rgba(255,255,255,0.1);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  }
+
+  #context-menu.show {
+    display: block;
+    animation: menuIn 0.15s ease;
+  }
+
+  @keyframes menuIn {
+    from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  .menu-item {
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #1d1d1f;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  body.dark .menu-item {
+    color: #f5f5f7;
+  }
+
+  .menu-item:hover {
+    background: rgba(0,113,227,0.1);
+    color: #0071e3;
+  }
+
+  body.dark .menu-item:hover {
+    background: rgba(10,132,255,0.2);
+    color: #0a84ff;
+  }
+
+  .menu-divider {
+    height: 1px;
+    background: rgba(0,0,0,0.08);
+    margin: 4px 6px;
+  }
+
+  body.dark .menu-divider {
+    background: rgba(255,255,255,0.1);
+  }
+
+  /* 缩放提示气泡 */
+  .scale-bubble {
+    position: fixed;
+    background: rgba(0,0,0,0.75);
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 200;
+  }
+
+  .scale-bubble.show {
+    opacity: 1;
+  }
+</style>
+</head>
+<body>
+
+<div class="ground"></div>
+
+<div id="pet" class="breathing">
+  <div id="pet-shadow"></div>
+  <img id="pet-img" src="Pet-stand.png" alt="Pet-LaoQin" draggable="false">
+</div>
+
+<div class="controls">
+  <button class="btn" id="btn-theme" onclick="toggleTheme()">🌙 黑夜</button>
+</div>
+
+<div class="hint" id="hint">
+  点击切换表情 · 拖动移动 · 滚轮缩放 · 右键菜单
+</div>
+
+<div id="context-menu">
+  <div class="menu-item" onclick="menuAction('Pet-stand.png')">待机</div>
+  <div class="menu-item" onclick="menuAction('Pet-set.png')">坐下</div>
+  <div class="menu-item" onclick="menuAction('Pet-squat.png')">蹲下</div>
+  <div class="menu-divider"></div>
+  <div class="menu-item" onclick="menuAction('__theme__')">切换主题</div>
+  <div class="menu-divider"></div>
+  <div class="menu-item" onclick="menuAction('__quit__')">退出（隐藏）</div>
+</div>
+
+<div class="scale-bubble" id="scale-bubble">100%</div>
+
+<script>
+// ============ 配置 ============
+const FRAMES = [
+  { file: "Pet-stand.png",       name: "待机" },
+  { file: "Pet-beg.png",         name: "乞求" },
+  { file: "Pet-deepseeking.png", name: "深思" },
+  { file: "Pet-glasses.png",     name: "推眼镜" },
+  { file: "Pet-laugh.png",       name: "大笑" },
+  { file: "Pet-love.png",        name: "比心" },
+  { file: "Pet-scratch.png",     name: "挠头" },
+  { file: "Pet-set.png",         name: "坐下" },
+  { file: "Pet-squat.png",       name: "蹲下" },
+  { file: "Pet-terrified.png",   name: "惊恐" },
+];
+
+const CONFIG = {
+  baseWidth: 200,
+  minScale: 0.3,
+  maxScale: 3.0,
+  wheelStep: 0.1,
+  idleDeepThink: 10000,   // 10 秒切深思
+  idleSit: 20000,         // 再 20 秒切坐下
+  lockDuration: 8000,     // 右键锁定表情 8 秒
+  multiClickWindow: 1000, // 连续点击判定窗口
+  multiClickCount: 5,     // 多少次算连续点击
+};
+
+// ============ 状态 ============
+const pet = document.getElementById('pet');
+const img = document.getElementById('pet-img');
+const hint = document.getElementById('hint');
+const menu = document.getElementById('context-menu');
+const scaleBubble = document.getElementById('scale-bubble');
+
+let state = {
+  currentIndex: 0,
+  scale: 1.0,
+  isDragging: false,
+  isHovering: false,
+  manualLock: false,
+  manualLockedIndex: null,
+  lockTimer: null,
+  idleTimer: null,
+  idleDeepTimer: null,
+  angryTimer: null,
+  clickTimes: [],
+  fadeTimer: null,
+  scaleBubbleTimer: null,
+};
+
+// ============ 图片预加载 ============
+const preloaded = {};
+FRAMES.forEach((f, i) => {
+  const image = new Image();
+  image.src = f.file;
+  preloaded[i] = image;
+});
+
+// ============ 显示表情 ============
+function showImage(index, animate = true) {
+  if (index === state.currentIndex && img.src.endsWith(FRAMES[index].file)) return;
+
+  const apply = () => {
+    state.currentIndex = index;
+    img.src = FRAMES[index].file;
+    img.classList.remove('fading');
+  };
+
+  if (animate) {
+    img.classList.add('fading');
+    if (state.fadeTimer) clearTimeout(state.fadeTimer);
+    state.fadeTimer = setTimeout(apply, 180);
+  } else {
+    apply();
+  }
+}
+
+function showByName(filename) {
+  const index = FRAMES.findIndex(f => f.file === filename);
+  if (index >= 0) showImage(index);
+}
+
+// ============ 呼吸动画（拖拽时暂停） ============
+function setBreathing(on) {
+  pet.classList.toggle('breathing', on);
+}
+
+// ============ 缩放 ============
+function applyScale() {
+  const w = CONFIG.baseWidth * state.scale;
+  img.style.width = w + 'px';
+}
+
+function showScaleBubble() {
+  scaleBubble.textContent = Math.round(state.scale * 100) + '%';
+  scaleBubble.classList.add('show');
+  if (state.scaleBubbleTimer) clearTimeout(state.scaleBubbleTimer);
+  state.scaleBubbleTimer = setTimeout(() => {
+    scaleBubble.classList.remove('show');
+  }, 800);
+}
+
+// ============ 闲置定时器 ============
+function resetIdleTimer() {
+  if (state.idleTimer) clearTimeout(state.idleTimer);
+  if (state.idleDeepTimer) clearTimeout(state.idleDeepTimer);
+
+  state.idleTimer = setTimeout(() => {
+    if (!state.isDragging && !state.isHovering && !state.manualLock) {
+      showByName('Pet-deepseeking.png');
+      state.idleDeepTimer = setTimeout(() => {
+        if (!state.isDragging && !state.isHovering && !state.manualLock) {
+          showByName('Pet-set.png');
+        }
+      }, CONFIG.idleSit);
+    }
+  }, CONFIG.idleDeepThink);
+}
+
+// ============ 手动锁定 ============
+function lockExpression(filename) {
+  const index = FRAMES.findIndex(f => f.file === filename);
+  if (index < 0) return;
+
+  state.manualLock = true;
+  state.manualLockedIndex = index;
+  showImage(index);
+  resetIdleTimer();
+
+  if (state.lockTimer) clearTimeout(state.lockTimer);
+  state.lockTimer = setTimeout(() => {
+    state.manualLock = false;
+    state.manualLockedIndex = null;
+    showByName('Pet-stand.png');
+    resetIdleTimer();
+  }, CONFIG.lockDuration);
+}
+
+function clearLock() {
+  state.manualLock = false;
+  state.manualLockedIndex = null;
+  if (state.lockTimer) {
+    clearTimeout(state.lockTimer);
+    state.lockTimer = null;
+  }
+}
+
+// ============ 鼠标事件 ============
+let dragState = {
+  offsetX: 0,
+  offsetY: 0,
+  pressX: 0,
+  pressY: 0,
+  moved: false,
+  startLeft: 0,
+  startTop: 0,
+};
+
+pet.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+
+  clearLock();
+  setBreathing(false);
+
+  const rect = pet.getBoundingClientRect();
+  dragState.offsetX = e.clientX - rect.left;
+  dragState.offsetY = e.clientY - rect.top;
+  dragState.pressX = e.clientX;
+  dragState.pressY = e.clientY;
+  dragState.moved = false;
+  dragState.startLeft = rect.left;
+  dragState.startTop = rect.top;
+
+  // 切换为 fixed 定位，直接控制 left/top
+  pet.style.left = rect.left + 'px';
+  pet.style.top = rect.top + 'px';
+  pet.style.transform = 'none';
+
+  state.isDragging = false;
+  resetIdleTimer();
+
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (e.buttons !== 1) return;
+  if (dragState.pressX === 0 && dragState.pressY === 0) return;
+
+  const dx = e.clientX - dragState.pressX;
+  const dy = e.clientY - dragState.pressY;
+
+  if (!state.isDragging && Math.abs(dx) + Math.abs(dy) > 4) {
+    state.isDragging = true;
+    pet.classList.add('dragging');
+    showByName('Pet-terrified.png');
+  }
+
+  if (state.isDragging) {
+    pet.style.left = (dragState.startLeft + dx) + 'px';
+    pet.style.top = (dragState.startTop + dy) + 'px';
+    dragState.moved = true;
+  }
+});
+
+document.addEventListener('mouseup', (e) => {
+  if (e.button !== 0) return;
+  if (dragState.pressX === 0 && dragState.pressY === 0) return;
+
+  const moved = dragState.moved;
+  dragState.pressX = 0;
+  dragState.pressY = 0;
+
+  if (state.isDragging) {
+    // 拖动结束
+    state.isDragging = false;
+    pet.classList.remove('dragging');
+    setBreathing(true);
+
+    // 边界限制，别跑出屏幕
+    const rect = pet.getBoundingClientRect();
+    let left = rect.left;
+    let top = rect.top;
+    const maxLeft = window.innerWidth - rect.width;
+    const maxTop = window.innerHeight - rect.height;
+    left = Math.max(0, Math.min(left, maxLeft));
+    top = Math.max(0, Math.min(top, maxTop));
+    pet.style.left = left + 'px';
+    pet.style.top = top + 'px';
+
+    if (state.isHovering) {
+      showByName('Pet-love.png');
+    } else {
+      showByName('Pet-stand.png');
+    }
+  } else if (!moved) {
+    // 单击
+    const now = Date.now();
+    state.clickTimes = state.clickTimes.filter(t => now - t < CONFIG.multiClickWindow);
+    state.clickTimes.push(now);
+
+    if (state.clickTimes.length >= CONFIG.multiClickCount) {
+      state.clickTimes = [];
+      showByName('Pet-terrified.png');
+      if (state.angryTimer) clearTimeout(state.angryTimer);
+      state.angryTimer = setTimeout(() => showByName('Pet-stand.png'), 2000);
+    } else {
+      const next = (state.currentIndex + 1) % FRAMES.length;
+      showImage(next);
+    }
+  }
+
+  resetIdleTimer();
+});
+
+// 双击
+pet.addEventListener('dblclick', (e) => {
+  clearLock();
+  showByName('Pet-terrified.png');
+  if (state.angryTimer) clearTimeout(state.angryTimer);
+  state.angryTimer = setTimeout(() => showByName('Pet-stand.png'), 1500);
+});
+
+// 悬停
+pet.addEventListener('mouseenter', () => {
+  state.isHovering = true;
+  if (!state.isDragging && !state.manualLock) {
+    showByName('Pet-love.png');
+  }
+  resetIdleTimer();
+});
+
+pet.addEventListener('mouseleave', () => {
+  state.isHovering = false;
+  if (!state.isDragging && !state.manualLock) {
+    showByName('Pet-stand.png');
+  }
+});
+
+// 滚轮缩放
+pet.addEventListener('wheel', (e) => {
+  e.preventDefault();
+
+  const dir = e.deltaY < 0 ? 1 : -1;
+  const newScale = Math.max(
+    CONFIG.minScale,
+    Math.min(CONFIG.maxScale, state.scale + dir * CONFIG.wheelStep)
+  );
+
+  if (newScale === state.scale) return;
+
+  // 以鼠标位置为中心缩放
+  const rect = pet.getBoundingClientRect();
+  const relX = (e.clientX - rect.left) / rect.width;
+  const relY = (e.clientY - rect.top) / rect.height;
+
+  state.scale = newScale;
+  applyScale();
+
+  // 缩放后重新定位，让鼠标下的点不动
+  const newRect = pet.getBoundingClientRect();
+  const newLeft = e.clientX - relX * newRect.width;
+  const newTop = e.clientY - relY * newRect.height;
+  pet.style.left = newLeft + 'px';
+  pet.style.top = newTop + 'px';
+
+  showScaleBubble();
+  resetIdleTimer();
+}, { passive: false });
+
+// ============ 右键菜单 ============
+pet.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.classList.add('show');
+});
+
+document.addEventListener('click', (e) => {
+  if (!menu.contains(e.target)) {
+    menu.classList.remove('show');
+  }
+});
+
+document.addEventListener('contextmenu', (e) => {
+  if (!pet.contains(e.target)) {
+    menu.classList.remove('show');
+  }
+});
+
+function menuAction(action) {
+  menu.classList.remove('show');
+
+  if (action === '__theme__') {
+    toggleTheme();
+  } else if (action === '__quit__') {
+    pet.style.display = 'none';
+  } else {
+    lockExpression(action);
+  }
+}
+
+// ============ 主题 ============
+function toggleTheme() {
+  const isDark = document.body.classList.toggle('dark');
+  document.getElementById('btn-theme').textContent = isDark ? '☀️ 白天' : '🌙 黑夜';
+  localStorage.setItem('pet-theme-web', isDark ? 'dark' : 'light');
+}
+
+// ============ 提示自动隐藏 ============
+let hintTimer = setTimeout(() => {
+  hint.classList.add('hidden');
+}, 8000);
+
+['mousedown', 'wheel'].forEach(evt => {
+  pet.addEventListener(evt, () => {
+    hint.classList.add('hidden');
+    clearTimeout(hintTimer);
+  });
+});
+
+// ============ 窗口大小变化 ============
+window.addEventListener('resize', () => {
+  const rect = pet.getBoundingClientRect();
+  const maxLeft = window.innerWidth - rect.width;
+  const maxTop = window.innerHeight - rect.height;
+  const left = Math.max(0, Math.min(rect.left, maxLeft));
+  const top = Math.max(0, Math.min(rect.top, maxTop));
+  pet.style.left = left + 'px';
+  pet.style.top = top + 'px';
+});
+
+// ============ 初始化 ============
+(function init() {
+  // 恢复主题
+  const saved = localStorage.getItem('pet-theme-web');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (saved === 'dark' || (!saved && prefersDark)) {
+    document.body.classList.add('dark');
+    document.getElementById('btn-theme').textContent = '☀️ 白天';
+  }
+
+  // 初始居中
+  const rect = pet.getBoundingClientRect();
+  pet.style.left = (window.innerWidth - rect.width) / 2 + 'px';
+  pet.style.top = (window.innerHeight - rect.height) / 2 + 'px';
+  pet.style.transform = 'none';
+
+  applyScale();
+  showImage(0, false);
+  setBreathing(true);
+  resetIdleTimer();
+})();
+</script>
+
+</body>
+</html>
